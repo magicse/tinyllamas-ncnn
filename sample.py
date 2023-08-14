@@ -7,13 +7,12 @@ from contextlib import nullcontext
 import torch
 import tiktoken
 from model import ModelArgs, Transformer
+from torch.nn import functional as F
 from tokenizer import Tokenizer
 
-from tinystories import get_tokenizer_model_path
-
 # -----------------------------------------------------------------------------
-checkpoint = 'out/ckpt.pt'
-start = "" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+out_dir = 'out' # ignored if init_from is not 'resume'
+start = "One day," # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples = 1 # number of samples to draw
 max_new_tokens = 100 # number of tokens generated in each sample
 temperature = 1.0 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
@@ -36,10 +35,11 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # init from a model saved in a specific directory
-checkpoint_dict = torch.load(checkpoint, map_location=device)
-gptconf = ModelArgs(**checkpoint_dict['model_args'])
+ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+checkpoint = torch.load(ckpt_path, map_location=device)
+gptconf = ModelArgs(**checkpoint['model_args'])
 model = Transformer(gptconf)
-state_dict = checkpoint_dict['model']
+state_dict = checkpoint['model']
 unwanted_prefix = '_orig_mod.'
 for k,v in list(state_dict.items()):
     if k.startswith(unwanted_prefix):
@@ -52,24 +52,56 @@ if compile:
     print("Compiling the model...")
     model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
-# load the tokenizer, either provided, or attempt to find it
-if tokenizer:
-    tokenizer_model = tokenizer
-else:
-    tokenizer_model = get_tokenizer_model_path(vocab_size=gptconf.vocab_size)
-enc = Tokenizer(tokenizer_model=tokenizer_model)
+# load the tokenizer
+enc = Tokenizer()
 
 # encode the beginning of the prompt
 if start.startswith('FILE:'):
     with open(start[5:], 'r', encoding='utf-8') as f:
         start = f.read()
 start_ids = enc.encode(start, bos=True, eos=False)
-x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+x = torch.tensor(start_ids, dtype=torch.long, device=device)
+
+def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
+    """
+    Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
+    the sequence max_new_tokens times, feeding the predictions back into the model each time.
+    Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+    Also note this is a super inefficient version of sampling with no key/value cache.
+    """
+    idx_cond_new = None
+    for _ in range(max_new_tokens):
+        # if the sequence context is growing too long we must crop it at block_size
+        idx_cond = idx if idx.size(0) <= model.params.max_seq_len else idx[:, -model.params.max_seq_len:]
+        idx_cond_new = torch.cat((torch.full((model.params.max_seq_len - idx.size(0),), 0, dtype=torch.long), idx_cond), dim=0)
+        idx_cond = idx_cond_new
+        # forward the model to get the logits for the index in the sequence
+        logits = model(idx_cond)
+        if temperature == 0.0:
+            # "sample" the single most likely index
+            _, idx_next = torch.topk(logits, k=1, dim=-1)
+        else:
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[[-1]]] = -float('Inf')
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+        # append sampled index to the running sequence and continue
+        idx = torch.cat((idx, idx_next), dim=0)
+
+    mod = torch.jit.trace(model, idx_cond_new)
+    mod.save("model.pt")
+
+    return idx
 
 # run generation
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
-            print(enc.decode(y[0].tolist()))
+            y = generate(model, x, max_new_tokens, temperature=temperature, top_k=top_k)
+            print(enc.decode(y.tolist()))
             print('---------------')

@@ -1,0 +1,10 @@
+venv
+__pycache__
+/out/ckpt.pt
+/model.pt
+/build
+/debug*
+/model.pt
+/model_*
+/model.ncnn.*
+/model.pnnx.*
