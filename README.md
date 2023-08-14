@@ -36,7 +36,7 @@ The resulting model.ncnn.bin and model.ncnn.param is the model in ncnn format.
 
 ### Compile the inference binary
 
-You can either compile it using CMake with ncnn as a dependency or link the library yourself.
+You can either compile it using CMake with ncnn as a dependency or link the library yourself. Before compiling, adjust ctx_length in tinyllamas.cpp to the context length of your model.
 
 #### Compile with CMake
 
