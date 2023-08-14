@@ -231,7 +231,7 @@ class Transformer(nn.Module):
             h = layer(h, freqs_cos, freqs_sin)
         h = self.norm(h)
 
-        h = h[-1, :]
+        # h = h[-1, :]
 
         logits = self.output(h)
         # self.last_loss = None

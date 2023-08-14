@@ -11,9 +11,9 @@
 
 #include "net.h"
 
-const int vocab_size = 32000, ctx_length = 1024;
+const int vocab_size = 32000;
 
-std::mt19937_64 rng(0);
+std::mt19937_64 rng(3407);  // qwq
 std::uniform_real_distribution<float> dist(0, 1);
 
 struct bpe {
@@ -78,6 +78,7 @@ std::vector<int> bpe::encode(std::string s) {
 struct tinyllama {
     ncnn::Net net;
     float topp, temp;
+    int topk, ctx_length;
     tinyllama(std::string bin, std::string param);
     int forward(const std::vector<int>& tokens);
 };
@@ -89,8 +90,13 @@ tinyllama::tinyllama(std::string bin, std::string param) {
 
 int tinyllama::forward(const std::vector<int>& tokens) {
     std::vector<int> input(ctx_length, 0);
-    for (int i = 0; i < std::min(ctx_length, (int)tokens.size()); i++) {
-        input[ctx_length - 1 - i] = tokens[tokens.size() - 1 - i];
+    int ind;
+    if (tokens.size() > ctx_length) {
+        for (int i = 0; i < ctx_length; i++) input[i] = tokens[tokens.size() - ctx_length + i];
+        ind = ctx_length - 1;
+    } else {
+        for (int i = 0; i < (int)tokens.size(); i++) input[i] = tokens[i];
+        ind = (int)tokens.size() - 1;
     }
 
     ncnn::Mat in(ctx_length);
@@ -102,31 +108,36 @@ int tinyllama::forward(const std::vector<int>& tokens) {
     ex.extract("out0", out);
 
     std::vector<float> logits(vocab_size);
-    for (int i = 0; i < vocab_size; i++) logits[i] = out[i];
+    for (int i = 0; i < vocab_size; i++) logits[i] = out.row(ind)[i];
 
     for (int i = 0; i < vocab_size; i++) logits[i] /= temp;
 
-    // softmax
-    auto maximum = *std::max_element(logits.begin(), logits.end());
-    for (int i = 0; i < vocab_size; i++) logits[i] = expf(logits[i] - maximum);
-    float tot = 0;
-    for (int i = 0; i < vocab_size; i++) tot += logits[i];
-    for (int i = 0; i < vocab_size; i++) logits[i] /= tot;
-
-    // top-p sampling
+    // sampling
     std::vector<std::pair<int, float> > a;
     for (int i = 0; i < vocab_size; i++) a.emplace_back(i, logits[i]);
-    std::sort(a.begin(), a.end(), [](auto a, auto b) { return a.second >
-    b.second; });
+    std::sort(a.begin(), a.end(),
+              [](auto x, auto y) { return x.second > y.second; });
+    while (a.size() > topk) a.pop_back();
+    auto maximum = std::max_element(a.begin(), a.end(), [](auto x, auto y) {
+                       return x.second < y.second;
+                   })->second;
+    std::transform(a.begin(), a.end(), a.begin(),
+                   [maximum](auto x) -> std::pair<int, float> {
+                       return {x.first, expf(x.second - maximum)};
+                   });
+    float sum = std::accumulate(a.begin(), a.end(), 0.0f,
+                                [](float x, auto y) { return x + y.second; });
+    std::transform(a.begin(), a.end(), a.begin(),
+                   [sum](auto x) -> std::pair<int, float> {
+                       return {x.first, x.second / sum};
+                   });
 
-    float sum = 0;
+    sum = 0;
     int last = 0;
-    for (int i = 0; i < vocab_size; i++)
-    {
+    for (int i = 0; i < (int)a.size(); i++) {
         sum += a[i].second;
         last = i;
-        if (sum > topp)
-            break;
+        if (sum > topp) break;
     }
 
     float r = dist(rng) * sum;
@@ -154,8 +165,10 @@ int main(int argc, char** argv) {
     int token_count = std::stoi(argv[2]);
 
     tinyllama model(model_bin, model_param);
-    model.topp = 0.1f;
+    model.topp = 0.9f;
     model.temp = 1.0f;
+    model.topk = 300;
+    model.ctx_length = 1024;
 
     // tokenize prompt
     bpe tokenizer;

@@ -9,3 +9,4 @@ __pycache__
 /model.ncnn.*
 /model.pnnx.*
 /tinyllamas
+/.vscode

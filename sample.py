@@ -77,6 +77,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
         idx_cond = idx_cond_new
         # forward the model to get the logits for the index in the sequence
         logits = model(idx_cond)
+        logits = logits[-1, :]
         if temperature == 0.0:
             # "sample" the single most likely index
             _, idx_next = torch.topk(logits, k=1, dim=-1)
