@@ -34,6 +34,24 @@ You need to replace `xxx` with the context length of your chosen model.
 
 The resulting model.ncnn.bin and model.ncnn.param is the model in ncnn format.
 
+### Compile the inference binary
+
+You can either compile it using CMake with ncnn as a dependency or link the library yourself.
+
+#### Compile with CMake
+
+This follows the standard procedure for compiling CMake projects.
+
+#### Link ncnn manually
+
+```
+c++ tinyllamas.cpp ~/ncnn/build/src/libncnn.a -I ~/ncnn/src -I ~/ncnn/build/src/ -o tinyllamas -fopenmp
+```
+
+### Use the resulting binary
+
+When run with a wrong number of arguments, the binary prints out usage information.
+
 ## License
 
 MIT

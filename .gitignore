@@ -8,3 +8,4 @@ __pycache__
 /model_*
 /model.ncnn.*
 /model.pnnx.*
+/tinyllamas
