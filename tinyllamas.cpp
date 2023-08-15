@@ -175,6 +175,7 @@ int main(int argc, char** argv) {
     tokenizer.load(tokenizer_path);
 
     auto tokens = tokenizer.encode(prompt);
+    tokens.insert(tokens.begin(), 1); // bos
 
     for (auto token : tokens) std::cout << tokenizer.vocab[token] << std::flush;
 
