@@ -14,7 +14,7 @@ Changes to the model:
 
 ### Export TorchScript
 
-First put desired model described in <https://github.com/karpathy/llama2.c#models> into /out/ckpt.pt. Then create a Python venv, enter it, and install Python dependencies:
+First put desired model listed in <https://github.com/karpathy/llama2.c#models> into /out/ckpt.pt. Then create a Python venv, enter it, and install Python dependencies:
 
 ```
 python -m venv venv
@@ -51,6 +51,12 @@ c++ tinyllamas.cpp ~/ncnn/build/src/libncnn.a -I ~/ncnn/src -I ~/ncnn/build/src/
 ### Use the resulting binary
 
 When run with a wrong number of arguments, the binary prints out usage information.
+
+### Use Meta's Llama 2 weights (untested)
+
+We first convert Llama 2 weights into llama2.c's binary format using export_meta_llama_bin.py, then convert it into llama2.c's PyTorch format for export to TorchScript using bin2pt.py. Then go through the same steps as described above.
+
+Note that due to the implementation being memory-inefficient, you might need more than 64 GB of memory even for converting the 7B model.
 
 ## License
 
