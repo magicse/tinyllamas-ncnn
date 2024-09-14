@@ -73,7 +73,13 @@ def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
     for _ in range(max_new_tokens):
         # if the sequence context is growing too long we must crop it at block_size
         idx_cond = idx if idx.size(0) <= model.params.max_seq_len else idx[:, -model.params.max_seq_len:]
-        idx_cond_new = torch.cat((torch.full((model.params.max_seq_len - idx.size(0),), 0, dtype=torch.long), idx_cond), dim=0)
+
+        # to same device (GPU or CPU)
+        idx_cond_new = torch.full((model.params.max_seq_len - idx.size(0),), 0, dtype=torch.long, device=idx.device)
+        idx_cond_new = torch.cat((idx_cond_new, idx_cond), dim=0)
+        
+        #idx_cond_new = torch.cat((torch.full((model.params.max_seq_len - idx.size(0),), 0, dtype=torch.long), idx_cond), dim=0)
+        
         idx_cond = idx_cond_new
         # forward the model to get the logits for the index in the sequence
         logits = model(idx_cond)
